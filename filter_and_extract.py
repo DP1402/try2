@@ -262,8 +262,10 @@ def _send_batch(client: anthropic.Anthropic, batch: list[dict], batch_idx: int,
                 continue
             entry["source_channel"] = ", ".join(sorted(channels))
             entry["source_message_id"] = msg["message_id"]
-            # Force message date if Claude made one up
+            # Store message timestamp separately from event date
             msg_date = msg["date"][:10]
+            entry["message_date"] = msg_date
+            # Fall back to message date if Claude returned no event date
             if not entry.get("date") or not entry["date"].startswith("202"):
                 entry["date"] = msg_date
             incidents.append(entry)

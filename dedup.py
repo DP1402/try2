@@ -108,8 +108,8 @@ def _same_target_type(a: dict, b: dict) -> bool:
     return False
 
 
-def _dates_close(a: dict, b: dict, max_days: int = 2) -> bool:
-    """Check if two incidents are within max_days of each other."""
+def _event_dates_close(a: dict, b: dict, max_days: int = 2) -> bool:
+    """Check if two incidents' EVENT dates are within max_days."""
     da = _parse_date(a.get("date", ""))
     db = _parse_date(b.get("date", ""))
     if not da or not db:
@@ -122,6 +122,25 @@ def _merge_cluster(cluster: list[dict]) -> dict:
     # Pick the most detailed record as base (longest damage summary)
     cluster.sort(key=lambda x: len(x.get("damage_summary", "") or ""), reverse=True)
     merged = dict(cluster[0])
+
+    # --- Date handling ---
+    # Event date: use the earliest across the cluster
+    event_dates = sorted(
+        (inc.get("date", "") for inc in cluster if inc.get("date")),
+        key=lambda d: d,
+    )
+    if event_dates:
+        merged["date"] = event_dates[0]                  # earliest event date
+        merged["last_event_date"] = event_dates[-1]      # latest event date
+
+    # Message timestamps: track first and last
+    msg_dates = sorted(
+        (inc.get("message_date", "") for inc in cluster if inc.get("message_date")),
+        key=lambda d: d,
+    )
+    if msg_dates:
+        merged["first_message_date"] = msg_dates[0]
+        merged["last_message_date"] = msg_dates[-1]
 
     # Collect all source channels
     channels = set()
@@ -153,6 +172,7 @@ def _merge_cluster(cluster: list[dict]) -> dict:
     # Drop internal fields
     merged.pop("source_message_id", None)
     merged.pop("_source_channels", None)
+    merged.pop("message_date", None)
 
     return merged
 
@@ -169,7 +189,7 @@ def deduplicate(incidents: list[dict]) -> list[dict]:
     if dropped:
         print(f"  Dropped {dropped} low-confidence entries")
 
-    # Sort by date
+    # Sort by event date
     incidents.sort(key=lambda x: x.get("date", ""))
 
     # Union-Find
@@ -186,14 +206,14 @@ def deduplicate(incidents: list[dict]) -> list[dict]:
         if px != py:
             parent[px] = py
 
-    # Compare pairs within date window
+    # Compare pairs within event date window
     for i in range(len(incidents)):
         for j in range(i + 1, len(incidents)):
             di = _parse_date(incidents[i].get("date", ""))
             dj = _parse_date(incidents[j].get("date", ""))
             if di and dj and (dj - di).days > 2:
                 break
-            if not _dates_close(incidents[i], incidents[j]):
+            if not _event_dates_close(incidents[i], incidents[j]):
                 continue
             if _locations_match(incidents[i], incidents[j]) and \
                _same_target_type(incidents[i], incidents[j]):
@@ -244,6 +264,7 @@ def to_csv(incidents: list[dict], output_path: str | None = None):
         "date", "city", "region", "facility_name", "target_type",
         "damage_summary", "latitude", "longitude", "source_channel",
         "confidence", "maritime",
+        "first_message_date", "last_message_date", "last_event_date",
     ]
 
     df = pd.DataFrame(incidents)
@@ -265,6 +286,9 @@ def to_csv(incidents: list[dict], output_path: str | None = None):
         "source_channel": "Source Channel",
         "confidence": "Confidence",
         "maritime": "Maritime",
+        "first_message_date": "First Message Date",
+        "last_message_date": "Last Message Date",
+        "last_event_date": "Last Event Date",
     })
 
     df.to_csv(output_path, index=False, encoding="utf-8")
