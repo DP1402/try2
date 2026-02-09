@@ -24,13 +24,17 @@ SCOPE — Exclude:
 - Incidents with no identifiable target or location
 
 CRITICAL RULES:
-1. DATE: Always use the MESSAGE DATE provided in brackets. Do NOT use dates from retrospective summaries in the text.
+1. DATE: Extract the actual date the strike HAPPENED, not the date the message was posted. \
+If the text says "on January 28" or "last night" (relative to message date), use that actual date. \
+Only fall back to the message date if no specific date is mentioned or inferable. \
+However, IGNORE dates from long retrospective summaries (e.g. "since the start of the war..." or "over the past year...").
 2. MULTIPLE INCIDENTS: If one message describes strikes on 3 different targets, return 3 separate objects.
 3. LANGUAGE: All output fields (city, region, facility_name, damage_summary) must be in English.
 4. COORDINATES: Only provide if you are reasonably sure of the location. Use null otherwise.
 
 For each incident extract:
-- date: the MESSAGE DATE (from the [Date: ...] field, NOT dates mentioned in retrospective text)
+- date: the actual date the strike happened (YYYY-MM-DD). Use context clues from the text \
+("last night", "on January 28", "yesterday"). Use message date only as fallback.
 - city: city or settlement name in English
 - region: region/oblast name in English
 - target_type: one of [military_base, airfield, ammunition_depot, fuel_depot, oil_refinery, power_infrastructure, naval, radar, command_post, transport, industrial, residential, other]

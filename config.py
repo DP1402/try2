@@ -2,13 +2,17 @@ from datetime import datetime
 
 # Telegram channels to scrape
 CHANNELS = [
+    "Crimeanwind",
+    "Tsaplienko",
+    "exilenova_plus",
+    "supernova_plus",
     "astrapress",
     "oper_ZSU",
 ]
 
 # Date range (TEST RUN: January 2026 only — change back for full scrape)
-START_DATE = datetime(2026, 1, 1)
-END_DATE = datetime(2026, 2, 1)  # exclusive upper bound
+START_DATE = datetime(2026, 2, 1)
+END_DATE = datetime(2026, 2, 8)  # exclusive upper bound
 
 # --- PRE-FILTER KEYWORD CATEGORIES ---
 # Pre-filter requires: (action term) AND (location OR infrastructure OR damage term)
