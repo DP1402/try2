@@ -1,0 +1,4 @@
+telethon
+anthropic
+python-dotenv
+pandas
