@@ -2,10 +2,6 @@ from datetime import datetime
 
 # Telegram channels to scrape
 CHANNELS = [
-    "Crimeanwind",
-    "Tsaplienko",
-    "exilenova_plus",
-    "supernova_plus",
     "astrapress",
     "oper_ZSU",
 ]
