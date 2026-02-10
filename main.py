@@ -4,6 +4,11 @@ import sys
 
 from dotenv import load_dotenv
 
+# Force unbuffered stdout/stderr so progress is visible in real-time
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+
 import config
 import dedup
 import filter_and_extract
@@ -22,6 +27,7 @@ def main():
     parser.add_argument("--only-extract", action="store_true", help="Only run extraction")
     parser.add_argument("--only-dedup", action="store_true", help="Only run dedup + CSV export")
     parser.add_argument("--only-validate", action="store_true", help="Only run Opus validation on existing CSV")
+    parser.add_argument("--yes", "-y", action="store_true", help="Auto-confirm cost prompts")
     args = parser.parse_args()
 
     api_id = os.getenv("TELEGRAM_API_ID")
@@ -41,7 +47,7 @@ def main():
 
     # Only validate existing CSV
     if args.only_validate:
-        report = validate.run(api_key=anthropic_key)
+        report = validate.run(api_key=anthropic_key, auto_confirm=args.yes)
         try:
             print("\n" + report)
         except UnicodeEncodeError:
@@ -62,7 +68,7 @@ def main():
         print("\n" + "=" * 60)
         print("STEP 2: Filtering and extracting incidents")
         print("=" * 60)
-        incidents = filter_and_extract.run(anthropic_key)
+        incidents = filter_and_extract.run(anthropic_key, auto_confirm=args.yes)
 
     if args.only_scrape:
         print("\nScraping complete. Run with --skip-scrape to process.")
@@ -82,7 +88,7 @@ def main():
 
             # Step 4: Validate with Opus
             if not args.skip_validate:
-                report = validate.run(api_key=anthropic_key)
+                report = validate.run(api_key=anthropic_key, auto_confirm=args.yes)
                 try:
                     print("\n" + report)
                 except UnicodeEncodeError:

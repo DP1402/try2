@@ -31,7 +31,10 @@ async def scrape_channels(api_id: int, api_hash: str):
     os.makedirs(config.RAW_DIR, exist_ok=True)
 
     client = TelegramClient("telegram_session", api_id, api_hash)
-    await client.start()
+    await client.connect()
+    if not await client.is_user_authorized():
+        print("ERROR: Telegram session not authorized. Run manually once to log in.")
+        return
     print("Telegram client connected.")
 
     for channel in config.CHANNELS:

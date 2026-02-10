@@ -52,7 +52,7 @@ QUALITY SCORE: [1-10]
 """
 
 
-def validate(csv_path: str | None = None, api_key: str | None = None) -> str:
+def validate(csv_path: str | None = None, api_key: str | None = None, auto_confirm: bool = False) -> str:
     """Validate and fix the final CSV using Claude Opus."""
     if not csv_path:
         csv_path = config.OUTPUT_CSV
@@ -84,10 +84,13 @@ def validate(csv_path: str | None = None, api_key: str | None = None) -> str:
     print(f"  Estimated total cost: ${est_total_cost:.2f}")
     print()
 
-    confirm = input("  Proceed with validation? [y/N]: ").strip().lower()
-    if confirm != "y":
-        print("  Validation cancelled.")
-        return "Validation cancelled by user."
+    if auto_confirm:
+        print("  Proceed with validation? [y/N]: y (auto-confirmed)")
+    else:
+        confirm = input("  Proceed with validation? [y/N]: ").strip().lower()
+        if confirm != "y":
+            print("  Validation cancelled.")
+            return "Validation cancelled by user."
 
     client = anthropic.Anthropic(api_key=api_key)
 
@@ -148,9 +151,9 @@ def validate(csv_path: str | None = None, api_key: str | None = None) -> str:
     return result
 
 
-def run(api_key: str | None = None) -> str:
+def run(api_key: str | None = None, auto_confirm: bool = False) -> str:
     """Run validation step."""
     print("\n" + "=" * 60)
     print("VALIDATION: Reviewing and fixing dataset with Claude Opus")
     print("=" * 60)
-    return validate(api_key=api_key)
+    return validate(api_key=api_key, auto_confirm=auto_confirm)

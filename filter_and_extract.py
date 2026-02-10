@@ -1,6 +1,8 @@
 import json
 import os
+import sys
 import time
+import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -272,11 +274,11 @@ def _send_batch(client: anthropic.Anthropic, batch: list[dict], batch_idx: int,
                 entry["date"] = msg_date
             incidents.append(entry)
 
-    print(f"    Batch {batch_idx + 1}/{total_batches}: {len(incidents)} incidents")
+    print(f"    Batch {batch_idx + 1}/{total_batches}: {len(incidents)} incidents", flush=True)
     return incidents
 
 
-def extract_incidents(api_key: str, messages: list[dict]) -> list[dict]:
+def extract_incidents(api_key: str, messages: list[dict], auto_confirm: bool = False) -> list[dict]:
     """Send messages to Claude in parallel batches and extract incidents."""
     client = anthropic.Anthropic(api_key=api_key)
     os.makedirs(config.EXTRACTED_DIR, exist_ok=True)
@@ -302,44 +304,52 @@ def extract_incidents(api_key: str, messages: list[dict]) -> list[dict]:
     est_output_cost = total_output_tokens / 1_000_000 * 15
     est_total_cost = est_input_cost + est_output_cost
 
-    print(f"\n  --- Extraction Cost Estimate (Sonnet 4.5) ---")
-    print(f"  Messages: {len(messages)} in {total_batches} batches")
-    print(f"  Input tokens:  ~{total_input_tokens:,} (${est_input_cost:.2f})")
-    print(f"  Output tokens: ~{total_output_tokens:,} (${est_output_cost:.2f})")
-    print(f"  Estimated total cost: ${est_total_cost:.2f}")
-    print()
+    print(f"\n  --- Extraction Cost Estimate (Sonnet 4.5) ---", flush=True)
+    print(f"  Messages: {len(messages)} in {total_batches} batches", flush=True)
+    print(f"  Input tokens:  ~{total_input_tokens:,} (${est_input_cost:.2f})", flush=True)
+    print(f"  Output tokens: ~{total_output_tokens:,} (${est_output_cost:.2f})", flush=True)
+    print(f"  Estimated total cost: ${est_total_cost:.2f}", flush=True)
+    print(flush=True)
 
-    confirm = input("  Proceed with extraction? [y/N]: ").strip().lower()
-    if confirm != "y":
-        print("  Extraction cancelled.")
-        return []
+    if auto_confirm:
+        print("  Proceed with extraction? [y/N]: y (auto-confirmed)")
+    else:
+        confirm = input("  Proceed with extraction? [y/N]: ").strip().lower()
+        if confirm != "y":
+            print("  Extraction cancelled.")
+            return []
 
     all_incidents = []
-
-    # Parallel batch processing
-    with ThreadPoolExecutor(max_workers=config.MAX_CONCURRENT) as executor:
-        futures = {
-            executor.submit(_send_batch, client, batch, idx, total_batches): idx
-            for idx, batch in enumerate(batches)
-        }
-        for future in as_completed(futures):
-            try:
-                incidents = future.result()
-                all_incidents.extend(incidents)
-            except Exception as e:
-                print(f"    Batch error: {e}")
-
-    # Save extracted incidents
     output_path = os.path.join(config.EXTRACTED_DIR, "incidents.jsonl")
-    with open(output_path, "w", encoding="utf-8") as f:
-        for inc in all_incidents:
-            f.write(json.dumps(inc, ensure_ascii=False) + "\n")
+    file_lock = threading.Lock()
+    completed_count = [0]  # mutable container for thread-safe counter
 
-    print(f"  Extracted {len(all_incidents)} incidents total.")
+    # Open file for incremental writing — each batch's results saved immediately
+    with open(output_path, "w", encoding="utf-8") as outfile:
+        with ThreadPoolExecutor(max_workers=config.MAX_CONCURRENT) as executor:
+            futures = {
+                executor.submit(_send_batch, client, batch, idx, total_batches): idx
+                for idx, batch in enumerate(batches)
+            }
+            for future in as_completed(futures):
+                try:
+                    incidents = future.result()
+                    with file_lock:
+                        for inc in incidents:
+                            outfile.write(json.dumps(inc, ensure_ascii=False) + "\n")
+                        outfile.flush()
+                        all_incidents.extend(incidents)
+                        completed_count[0] += 1
+                    print(f"    [{completed_count[0]}/{total_batches} batches done, "
+                          f"{len(all_incidents)} incidents so far]", flush=True)
+                except Exception as e:
+                    print(f"    Batch error: {e}", flush=True)
+
+    print(f"  Extracted {len(all_incidents)} incidents total.", flush=True)
     return all_incidents
 
 
-def run(api_key: str) -> list[dict]:
+def run(api_key: str, auto_confirm: bool = False) -> list[dict]:
     """Full filter + extract pipeline."""
     print("Loading and filtering messages...")
     messages = load_and_filter_messages()
@@ -349,4 +359,4 @@ def run(api_key: str) -> list[dict]:
         return []
 
     print(f"\nExtracting incidents with Claude API ({config.CLAUDE_MODEL})...")
-    return extract_incidents(api_key, messages)
+    return extract_incidents(api_key, messages, auto_confirm=auto_confirm)
