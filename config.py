@@ -10,9 +10,9 @@ CHANNELS = [
     "oper_ZSU",
 ]
 
-# Date range (TEST RUN: January 2026 only — change back for full scrape)
-START_DATE = datetime(2026, 2, 1)
-END_DATE = datetime(2026, 2, 8)  # exclusive upper bound
+# Date range (PRODUCTION RUN: Jan 1 – Feb 10, 2026)
+START_DATE = datetime(2026, 1, 1)
+END_DATE = datetime(2026, 2, 11)  # exclusive upper bound (includes all of Feb 10)
 
 # --- PRE-FILTER KEYWORD CATEGORIES ---
 # Pre-filter requires: (action term) AND (location OR infrastructure OR damage term)

@@ -96,6 +96,39 @@ def _locations_match(a: dict, b: dict) -> bool:
     return False
 
 
+def _locations_weak_match(a: dict, b: dict) -> bool:
+    """
+    Weak location match: same region, both have no city.
+    Catches maritime targets (region="Crimea", no city) and vague-location strikes.
+    Rejects if both have distinct facility names that don't match — those are
+    different targets in the same region.
+    """
+    city_a = _normalize(a.get("city", ""))
+    city_b = _normalize(b.get("city", ""))
+    if city_a or city_b:
+        return False
+
+    region_a = _normalize(a.get("region", ""))
+    region_b = _normalize(b.get("region", ""))
+    if not region_a or not region_b or region_a != region_b:
+        return False
+
+    # Both have named facilities that don't match → different targets
+    facility_a = _normalize(a.get("facility_name", ""))
+    facility_b = _normalize(b.get("facility_name", ""))
+    if facility_a and facility_b:
+        if not (facility_a in facility_b or facility_b in facility_a):
+            return False
+
+    return True
+
+
+_COMPATIBLE_TYPES = [
+    {"military_base", "command_post"},
+    {"fuel_depot", "oil_refinery"},
+]
+
+
 def _same_target_type(a: dict, b: dict) -> bool:
     """Check if target types are compatible for merging."""
     ta = (a.get("target_type") or "other").lower()
@@ -105,6 +138,10 @@ def _same_target_type(a: dict, b: dict) -> bool:
     # "other" matches anything
     if ta == "other" or tb == "other":
         return True
+    # Compatible type groups (e.g. military_base ≈ command_post)
+    for group in _COMPATIBLE_TYPES:
+        if ta in group and tb in group:
+            return True
     return False
 
 
@@ -169,8 +206,17 @@ def _merge_cluster(cluster: list[dict]) -> dict:
     merged["maritime"] = any(inc.get("maritime") is True or inc.get("maritime") == "true"
                             for inc in cluster)
 
+    # Collect all source message IDs into semicolon-separated string
+    msg_ids = []
+    for inc in cluster:
+        mid = inc.get("source_message_id", "")
+        if mid:
+            msg_ids.append(str(mid))
+    merged["source_message_id"] = "; ".join(dict.fromkeys(msg_ids))  # deduped, ordered
+
+    # Keep original_text from base (most detailed) record — already in merged from cluster[0]
+
     # Drop internal fields
-    merged.pop("source_message_id", None)
     merged.pop("_source_channels", None)
     merged.pop("message_date", None)
 
@@ -207,6 +253,7 @@ def deduplicate(incidents: list[dict]) -> list[dict]:
             parent[px] = py
 
     # Compare pairs within event date window
+    weak_indices = set()  # indices merged via region-only match
     for i in range(len(incidents)):
         for j in range(i + 1, len(incidents)):
             di = _parse_date(incidents[i].get("date", ""))
@@ -215,18 +262,34 @@ def deduplicate(incidents: list[dict]) -> list[dict]:
                 break
             if not _event_dates_close(incidents[i], incidents[j]):
                 continue
-            if _locations_match(incidents[i], incidents[j]) and \
-               _same_target_type(incidents[i], incidents[j]):
+            if not _same_target_type(incidents[i], incidents[j]):
+                continue
+            if _locations_match(incidents[i], incidents[j]):
                 union(i, j)
+            elif _locations_weak_match(incidents[i], incidents[j]):
+                union(i, j)
+                weak_indices.add(i)
+                weak_indices.add(j)
 
-    # Group by cluster
+    # Group by cluster, track which clusters used weak matching
     clusters: dict[int, list[dict]] = {}
+    cluster_is_weak: dict[int, bool] = {}
     for i, inc in enumerate(incidents):
         root = find(i)
         clusters.setdefault(root, []).append(inc)
+        if i in weak_indices:
+            cluster_is_weak[root] = True
 
-    # Merge each cluster
-    deduplicated = [_merge_cluster(c) for c in clusters.values()]
+    # Merge each cluster, flag uncertain merges
+    deduplicated = []
+    for root, cluster in clusters.items():
+        merged = _merge_cluster(cluster)
+        if cluster_is_weak.get(root, False) and len(cluster) > 1:
+            merged["dedup_note"] = (
+                f"Merged {len(cluster)} rows by region only (no city/coordinates) "
+                f"— verify this is a single incident"
+            )
+        deduplicated.append(merged)
     deduplicated.sort(key=lambda x: x.get("date", ""))
 
     return deduplicated
@@ -265,6 +328,7 @@ def to_csv(incidents: list[dict], output_path: str | None = None):
         "damage_summary", "latitude", "longitude", "source_channel",
         "confidence", "maritime",
         "first_message_date", "last_message_date", "last_event_date",
+        "source_message_id", "original_text", "dedup_note",
     ]
 
     df = pd.DataFrame(incidents)
@@ -289,7 +353,10 @@ def to_csv(incidents: list[dict], output_path: str | None = None):
         "first_message_date": "First Message Date",
         "last_message_date": "Last Message Date",
         "last_event_date": "Last Event Date",
+        "source_message_id": "Source Message ID",
+        "original_text": "Original Text",
+        "dedup_note": "Dedup Note",
     })
 
-    df.to_csv(output_path, index=False, encoding="utf-8")
+    df.to_csv(output_path, index=False, encoding="utf-8-sig")
     print(f"  CSV saved to {output_path} ({len(df)} rows)")

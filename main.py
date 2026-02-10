@@ -42,7 +42,11 @@ def main():
     # Only validate existing CSV
     if args.only_validate:
         report = validate.run(api_key=anthropic_key)
-        print("\n" + report)
+        try:
+            print("\n" + report)
+        except UnicodeEncodeError:
+            print("\n" + report.encode("ascii", errors="replace").decode("ascii"))
+            print("  (Some characters replaced — full report in data/validation_report.md)")
         return
 
     # Step 1: Scrape
@@ -79,7 +83,11 @@ def main():
             # Step 4: Validate with Opus
             if not args.skip_validate:
                 report = validate.run(api_key=anthropic_key)
-                print("\n" + report)
+                try:
+                    print("\n" + report)
+                except UnicodeEncodeError:
+                    print("\n" + report.encode("ascii", errors="replace").decode("ascii"))
+                    print("  (Some characters replaced — full report in data/validation_report.md)")
         else:
             print("\nNo incidents found.")
 

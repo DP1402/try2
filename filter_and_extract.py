@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import anthropic
 
 import config
+from dedup import _TRANSLIT
 
 EXTRACTION_PROMPT = """\
 You are extracting structured data about Ukrainian strikes on Russian-controlled territory.
@@ -89,8 +90,8 @@ def _compound_keyword_filter(text: str) -> bool:
 
 
 def _word_set(text: str) -> set[str]:
-    """Extract word set for similarity comparison."""
-    return set(text.lower().split())
+    """Extract word set for similarity comparison (transliterated to Latin)."""
+    return set(text.lower().translate(_TRANSLIT).split())
 
 
 def _jaccard_similarity(a: set, b: set) -> float:
@@ -261,7 +262,8 @@ def _send_batch(client: anthropic.Anthropic, batch: list[dict], batch_idx: int,
             if entry is None:
                 continue
             entry["source_channel"] = ", ".join(sorted(channels))
-            entry["source_message_id"] = msg["message_id"]
+            entry["source_message_id"] = str(msg["message_id"])
+            entry["original_text"] = msg["text"]
             # Store message timestamp separately from event date
             msg_date = msg["date"][:10]
             entry["message_date"] = msg_date
@@ -284,9 +286,33 @@ def extract_incidents(api_key: str, messages: list[dict]) -> list[dict]:
         batches.append(messages[i:i + config.BATCH_SIZE])
 
     total_batches = len(batches)
-    est_tokens = len(messages) * 200  # rough estimate: 200 tokens per message
-    est_cost = est_tokens / 1_000_000 * 3  # ~$3/M input tokens for Sonnet
-    print(f"  {total_batches} batches, ~{est_tokens:,} input tokens, ~${est_cost:.2f} estimated cost")
+
+    # --- Cost estimate ---
+    # Count actual characters across all batches, convert to tokens
+    total_chars = sum(len(msg.get("text", "")) for msg in messages)
+    # ~3 chars per token for Cyrillic/mixed text
+    input_tokens_content = total_chars / 3
+    # System prompt overhead per batch (~800 tokens each)
+    input_tokens_system = total_batches * 800
+    total_input_tokens = int(input_tokens_content + input_tokens_system)
+    # Output estimate: ~200 tokens per message × 30% incident rate
+    total_output_tokens = int(len(messages) * 200 * 0.3)
+    # Sonnet pricing: $3/M input + $15/M output
+    est_input_cost = total_input_tokens / 1_000_000 * 3
+    est_output_cost = total_output_tokens / 1_000_000 * 15
+    est_total_cost = est_input_cost + est_output_cost
+
+    print(f"\n  --- Extraction Cost Estimate (Sonnet 4.5) ---")
+    print(f"  Messages: {len(messages)} in {total_batches} batches")
+    print(f"  Input tokens:  ~{total_input_tokens:,} (${est_input_cost:.2f})")
+    print(f"  Output tokens: ~{total_output_tokens:,} (${est_output_cost:.2f})")
+    print(f"  Estimated total cost: ${est_total_cost:.2f}")
+    print()
+
+    confirm = input("  Proceed with extraction? [y/N]: ").strip().lower()
+    if confirm != "y":
+        print("  Extraction cancelled.")
+        return []
 
     all_incidents = []
 
