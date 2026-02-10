@@ -61,9 +61,8 @@ def _has_any(text: str, keywords: list[str]) -> bool:
 
 def _compound_keyword_filter(text: str) -> bool:
     """
-    Compound pre-filter: require an action term AND at least one of
-    (Russian location, infrastructure term, or damage term).
-    This eliminates ~80% of irrelevant messages vs. single-keyword matching.
+    Compound pre-filter: require an action term AND supporting evidence
+    of a Ukrainian strike on Russian territory.
     """
     text_lower = text.lower()
 
@@ -71,26 +70,43 @@ def _compound_keyword_filter(text: str) -> bool:
     if not _has_any(text_lower, config.KEYWORDS_ACTION):
         return False
 
-    # Must also have at least one of: location, infrastructure, or damage
+    # Reject messages matching exclusion patterns (frontline, defense summaries, etc.)
+    if _has_any(text_lower, config.KEYWORDS_EXCLUSION):
+        return False
+
     has_location = _has_any(text_lower, config.KEYWORDS_RUSSIAN_LOCATIONS)
     has_infra = _has_any(text_lower, config.KEYWORDS_INFRASTRUCTURE)
     has_damage = _has_any(text_lower, config.KEYWORDS_DAMAGE)
-
-    if not (has_location or has_infra or has_damage):
-        return False
-
-    # Exclusion: if message mentions Ukrainian cities being hit
-    # but NO Russian locations, it's probably about Russian strikes on Ukraine
     has_ua_target = _has_any(text_lower, config.KEYWORDS_UKRAINIAN_TARGETS)
-    if has_ua_target and not has_location:
-        return False
 
-    return True
+    # If Ukrainian targets are mentioned, require infrastructure term to pass —
+    # messages about "strike on Kharkiv, launched from Belgorod" have location
+    # + damage but no Russian infrastructure, so they get filtered out.
+    if has_ua_target:
+        return has_infra and has_location
+
+    # Otherwise require action + at least one of (location, infra, damage)
+    # but purely location-only matches (no infra, no damage) are too vague
+    if has_infra:
+        return True
+    if has_location and has_damage:
+        return True
+
+    return False
 
 
 def _word_set(text: str) -> set[str]:
-    """Extract word set for similarity comparison."""
-    return set(text.lower().split())
+    """Extract word set for similarity comparison.
+    Strips punctuation and truncates to 5 chars to normalize Russian/Ukrainian
+    grammatical case endings (e.g. пожаре/пожар → пожар, завода/заводе → завод)."""
+    words = set()
+    for w in text.lower().split():
+        # Strip punctuation from edges
+        w = w.strip(".,;:!?\"'()[]{}—–-«»…")
+        if len(w) >= 3:
+            # Truncate to 5 chars — strips most case/conjugation suffixes
+            words.add(w[:5] if len(w) > 5 else w)
+    return words
 
 
 def _jaccard_similarity(a: set, b: set) -> float:
@@ -211,9 +227,10 @@ def _send_batch(client: anthropic.Anthropic, batch: list[dict], batch_idx: int,
         try:
             response = client.messages.create(
                 model=config.CLAUDE_MODEL,
-                max_tokens=4096,
+                max_tokens=8192,
+                system=EXTRACTION_PROMPT,
                 messages=[
-                    {"role": "user", "content": EXTRACTION_PROMPT + "\n\n" + user_prompt}
+                    {"role": "user", "content": user_prompt}
                 ],
             )
             break
@@ -268,6 +285,14 @@ def _send_batch(client: anthropic.Anthropic, batch: list[dict], batch_idx: int,
             # Fall back to message date if Claude returned no event date
             if not entry.get("date") or not entry["date"].startswith("202"):
                 entry["date"] = msg_date
+            # Drop incidents with dates outside the configured range
+            try:
+                from datetime import datetime
+                inc_date = datetime.strptime(entry["date"][:10], "%Y-%m-%d")
+                if inc_date < config.START_DATE or inc_date >= config.END_DATE:
+                    continue
+            except (ValueError, KeyError):
+                pass
             incidents.append(entry)
 
     print(f"    Batch {batch_idx + 1}/{total_batches}: {len(incidents)} incidents")
@@ -303,9 +328,9 @@ def extract_incidents(api_key: str, messages: list[dict]) -> list[dict]:
             except Exception as e:
                 print(f"    Batch error: {e}")
 
-    # Save extracted incidents
+    # Save extracted incidents (append to preserve previous runs)
     output_path = os.path.join(config.EXTRACTED_DIR, "incidents.jsonl")
-    with open(output_path, "w", encoding="utf-8") as f:
+    with open(output_path, "a", encoding="utf-8") as f:
         for inc in all_incidents:
             f.write(json.dumps(inc, ensure_ascii=False) + "\n")
 

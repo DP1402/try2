@@ -32,10 +32,7 @@ Specific checks and fixes to apply:
 - City/Region: standardize to English, fix obvious typos or inconsistencies
 - Merge Source Channel lists if you identify duplicates being merged
 
-**ADD rows if:**
-- Based on your knowledge, there are major confirmed strikes during this period that are clearly \
-missing from the dataset. Only add strikes you are highly confident about. Use confidence=medium \
-for these additions and set Source Channel to "opus_added".
+**DO NOT add new rows.** Only correct existing data. The dataset must remain source-grounded.
 
 **SORT** all rows chronologically by date.
 
@@ -65,7 +62,7 @@ def validate(csv_path: str | None = None, api_key: str | None = None) -> str:
     df = pd.read_csv(csv_path)
     print(f"Validating and fixing {len(df)} rows from {csv_path}...")
 
-    csv_text = df.to_csv(index=True)
+    csv_text = df.to_csv(index=False)
 
     client = anthropic.Anthropic(api_key=api_key)
 

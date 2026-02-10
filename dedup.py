@@ -32,6 +32,41 @@ def _normalize(s: str) -> str:
     return " ".join(s.split())
 
 
+# Known city name equivalences (transliteration variants that don't match
+# after simple character-level transliteration).
+_CITY_ALIASES = {}
+for _group in [
+    ["voronezh", "voronizh"],
+    ["sevastopol", "sevastopil"],
+    ["zaporizhzhia", "zaporizhzhya", "zaporozhye", "zaporozhe"],
+    ["dnipro", "dnepr"],
+    ["kharkiv", "kharkov", "kharkow"],
+    ["kyiv", "kiev", "kiyev"],
+    ["odesa", "odessa"],
+    ["mykolaiv", "nikolaev", "mikolayiv"],
+    ["dzhankoi", "dzhankoy"],
+    ["feodosia", "feodosiya", "feodosija"],
+    ["yevpatoria", "yevpatoriya", "evpatoria"],
+    ["simferopol", "simferopil"],
+    ["bryansk", "briansk"],
+    ["ryazan", "ryazan"],
+    ["krasnodar", "krasnodar"],
+    ["krasnoyarsk", "krasnoyarsk"],
+    ["saratov", "saratov"],
+    ["yekaterinburg", "ekaterinburg"],
+]:
+    canonical = _group[0]
+    for _name in _group:
+        _CITY_ALIASES[_name] = canonical
+
+
+def _cities_equivalent(a: str, b: str) -> bool:
+    """Check if two normalized city names refer to the same city."""
+    ca = _CITY_ALIASES.get(a, a)
+    cb = _CITY_ALIASES.get(b, b)
+    return ca == cb
+
+
 def _parse_date(date_str: str) -> datetime | None:
     """Parse a date string to datetime."""
     if not date_str:
@@ -55,7 +90,8 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _locations_match(a: dict, b: dict) -> bool:
     """Check if two incidents refer to the same location."""
-    # Coordinate check (50km radius — wider to catch transliteration mismatches)
+    # Coordinate check (30km radius — tight enough to avoid merging
+    # different facilities in the same oblast)
     if (a.get("latitude") and a.get("longitude") and
             b.get("latitude") and b.get("longitude")):
         try:
@@ -63,7 +99,7 @@ def _locations_match(a: dict, b: dict) -> bool:
                 float(a["latitude"]), float(a["longitude"]),
                 float(b["latitude"]), float(b["longitude"]),
             )
-            if dist < 50:
+            if dist < 30:
                 return True
         except (ValueError, TypeError):
             pass
@@ -76,11 +112,13 @@ def _locations_match(a: dict, b: dict) -> bool:
         # Exact match after normalization
         if city_a == city_b:
             return True
-        # Substring match (e.g., "ilsky" in "ilsky refinery")
-        if city_a in city_b or city_b in city_a:
+        # Also try known equivalences (Ukrainian vs English spelling)
+        if _cities_equivalent(city_a, city_b):
             return True
-        # First 5 chars match (catches Streletskoye / Streletskiye etc.)
-        if len(city_a) >= 5 and len(city_b) >= 5 and city_a[:5] == city_b[:5]:
+        # Substring match only when the shorter string is long enough
+        # to be meaningful (avoids "kov" matching "kharkov")
+        shorter = min(len(city_a), len(city_b))
+        if shorter >= 6 and (city_a in city_b or city_b in city_a):
             return True
 
     # Same region + similar facility name
@@ -102,9 +140,28 @@ def _same_target_type(a: dict, b: dict) -> bool:
     tb = (b.get("target_type") or "other").lower()
     if ta == tb:
         return True
-    # "other" matches anything
+    # "other" can only merge with a specific type if they share the same
+    # facility name or coordinates are very close (<10km) — prevents
+    # vague "military target" from swallowing unrelated specific targets.
     if ta == "other" or tb == "other":
-        return True
+        # Check for coordinate proximity as confirmation
+        if (a.get("latitude") and a.get("longitude") and
+                b.get("latitude") and b.get("longitude")):
+            try:
+                dist = _haversine_km(
+                    float(a["latitude"]), float(a["longitude"]),
+                    float(b["latitude"]), float(b["longitude"]),
+                )
+                if dist < 10:
+                    return True
+            except (ValueError, TypeError):
+                pass
+        # Check for matching facility name
+        fa = _normalize(a.get("facility_name", ""))
+        fb = _normalize(b.get("facility_name", ""))
+        if fa and fb and (fa in fb or fb in fa):
+            return True
+        return False
     return False
 
 

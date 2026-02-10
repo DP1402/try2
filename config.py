@@ -21,12 +21,33 @@ END_DATE = datetime(2026, 2, 8)  # exclusive upper bound
 KEYWORDS_ACTION = [
     # Russian
     "удар", "ракет", "дрон", "бпла", "шахед", "атак", "обстрел",
-    "прилёт", "прилет", "детонац", "порази", "порази",
+    "прилёт", "прилет", "детонац", "порази", "поражен",
     # Ukrainian
     "обстріл", "ракет", "дрон", "бпла", "шахед", "атак",
-    "приліт", "уражен", "вдари",
+    "приліт", "уражен", "вдари", "ураження",
     # English
     "strike", "missile", "drone", "shahed", "attack", "hit",
+]
+
+# Exclusion keywords — strong signal the message is NOT about a UA strike on Russia.
+KEYWORDS_EXCLUSION = [
+    # Drones shot down / air defense summaries
+    "сбито над", "перехвачен", "уничтожены средствами пво",
+    "збито над", "перехоплен",
+    # Frontline / tactical combat
+    "fpv", "фпв", "на передовой", "на передовій",
+    "линия соприкосновения", "лінія зіткнення",
+    # Civilian / non-military incidents
+    "база данных", "бази даних",
+    "бытового газа", "побутового газу",
+    # Military drills / exercises
+    "учения", "навчання",
+    # Sanctions / economic (metaphorical "strikes")
+    "санкции", "санкцій",
+    # Retrospective / historical summaries
+    "с начала года", "з початку року",
+    "с начала войны", "з початку війни",
+    "с начала 202", "з початку 202",
 ]
 
 KEYWORDS_DAMAGE = [
@@ -263,7 +284,7 @@ RETRY_DELAY = 5           # seconds
 MAX_CONCURRENT = 4        # parallel Claude API calls
 
 # Pre-filter
-DEDUP_SIMILARITY = 0.7    # cross-channel text dedup threshold (word overlap)
+DEDUP_SIMILARITY = 0.5    # cross-channel text dedup threshold (word overlap)
 
 # Output paths
 DATA_DIR = "data"

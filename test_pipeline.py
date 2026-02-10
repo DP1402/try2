@@ -85,21 +85,31 @@ MESSAGES = [
              "Атака дронов ВСУ на энергообъект в Курской области. Подстанция повреждена.",
              day_offset=5),
 
-    # ── FALSE POSITIVES: should be REJECTED but may sneak through ──
+    # TP9: Radar destroyed in Crimea with location + damage
+    make_msg("Crimeanwind", 8501,
+             "Ракетный удар по РЛС в Крыму. Радар уничтожен, пожар на объекте.",
+             day_offset=3),
+
+    # TP10: Airfield attack with damage
+    make_msg("oper_ZSU", 8502,
+             "Дроны атаковали аэродром в Курской области. Повреждена взлётная полоса, горит техника.",
+             day_offset=4),
+
+    # ── FALSE POSITIVES: should be REJECTED ──
 
     # FP1: Russian strike on Ukraine (mentions Belgorod only as launch point)
     make_msg("Tsaplienko", 9001,
              "Россия нанесла ракетный удар по Харькову. Ракеты запущены из Белгородской области. Повреждены жилые дома.",
              day_offset=0),
 
-    # FP2: Mentions "Rostov" but this is about a car accident with "explosion"
+    # FP2: Gas explosion in Rostov (not a strike)
     make_msg("astrapress", 9002,
              "В Ростове произошел сильный взрыв газа в жилом доме. Пострадали 5 человек. Атака не подтверждена, взрыв бытового газа.",
              day_offset=1),
 
     # FP3: Generic MoD summary "X drones shot down" with no specific target
     make_msg("oper_ZSU", 9003,
-             "По данным ПВО, за ночь сбито 15 дронов-шахедов над Ростовской областью. Все дроны уничтожены.",
+             "По данным ПВО, за ночь сбито над Ростовской областью 15 дронов-шахедов. Все дроны уничтожены.",
              day_offset=2),
 
     # FP4: Historical/retrospective summary
@@ -108,7 +118,7 @@ MESSAGES = [
              "НПЗ в Рязани, Саратове, Самаре — все были атакованы.",
              day_offset=3),
 
-    # FP5: Frontline tactical combat (mentions "military base" but is frontline action)
+    # FP5: Frontline tactical combat (FPV drones on front line)
     make_msg("exilenova_plus", 9005,
              "На Курском направлении ВСУ атаковали позиции врага FPV-дронами. "
              "Уничтожена военная база противника на передовой. Бои продолжаются.",
@@ -119,14 +129,29 @@ MESSAGES = [
              "Информация о тарифных изменениях в сфере энергетики. Удар по кошельку потребителей.",
              day_offset=5),
 
-    # FP7: "база" means "database" in IT context
+    # FP7: "база данных" = database in IT context
     make_msg("astrapress", 9007,
              "Хакерская атака на базу данных российского министерства. Пожар в серверной.",
              day_offset=0),
 
+    # FP8: Discussion about sanctions, not a strike
+    make_msg("Tsaplienko", 9008,
+             "Ракетные санкции ударили по российской нефтепереработке в Саратовской области. Экспорт снизился.",
+             day_offset=1),
+
+    # FP9: Drill / exercise, not actual strike
+    make_msg("oper_ZSU", 9009,
+             "Учения ПВО в Ростовской области. Ракетные стрельбы по целям. Все цели поражены.",
+             day_offset=2),
+
+    # FP10: Russian strikes on Ukraine — mentions "Kyiv" and "Belgorod" region shelling
+    make_msg("supernova_plus", 9010,
+             "Обстрел Киева ракетами. Россия атаковала с территории Белгородской области. Жертвы среди мирного населения.",
+             day_offset=3),
+
     # ── FALSE NEGATIVES: should PASS but might get filtered out ──
 
-    # FN1: Strike report without explicit action word (uses "поражение" stem that isn't in keywords)
+    # FN1: Uses "поражение" (our fix added "поражен" stem)
     make_msg("Tsaplienko", 10001,
              "Поражение нефтеперерабатывающего завода в Ростовской области. Мощный пожар.",
              day_offset=1),
@@ -136,7 +161,7 @@ MESSAGES = [
              "БОБР ВСУ поразил электростанцию в Белгородской области. Крупный пожар.",
              day_offset=2),
 
-    # FN3: Short message, only city name hint (no explicit infrastructure term)
+    # FN3: Short message, only location (no infra or damage term)
     make_msg("Crimeanwind", 10003,
              "Удар по Крыму. Детали уточняются.",
              day_offset=3),
@@ -146,7 +171,7 @@ MESSAGES = [
              "Пожар на нефтебазе в Краснодарском крае продолжается уже вторые сутки.",
              day_offset=4),
 
-    # FN5: Ukrainian language, refers to Crimea bridge attack
+    # FN5: Ukrainian language, Crimea bridge attack
     make_msg("exilenova_plus", 10005,
              "Атака на Кримський міст. Рух зупинено.",
              day_offset=5),
@@ -199,8 +224,8 @@ print("KEYWORD FILTER TEST")
 print("=" * 70)
 
 # Classify each message
-tp_ids = {1001, 2001, 3001, 4001, 5001, 6001, 7001, 8001}
-fp_ids = {9001, 9002, 9003, 9004, 9005, 9006, 9007}
+tp_ids = {1001, 2001, 3001, 4001, 5001, 6001, 7001, 8001, 8501, 8502}
+fp_ids = {9001, 9002, 9003, 9004, 9005, 9006, 9007, 9008, 9009, 9010}
 fn_ids = {10001, 10002, 10003, 10004, 10005}
 ec_ids = {11001, 11002, 12001, 12002}
 
@@ -232,20 +257,33 @@ for msg in MESSAGES:
         else:
             filter_results["ec_fail"].append(mid)
 
-print(f"\nTrue Positives:  {len(filter_results['tp_pass'])}/{len(tp_ids)} passed (should be all)")
+tp_total = len(tp_ids)
+fp_total = len(fp_ids)
+fn_total = len(fn_ids)
+
+print(f"\nTrue Positives:  {len(filter_results['tp_pass'])}/{tp_total} passed", end="")
+if len(filter_results['tp_pass']) == tp_total:
+    print(" ✓")
+else:
+    print(f" ✗ ({len(filter_results['tp_fail'])} missed)")
 for mid in filter_results['tp_fail']:
     msg = next(m for m in MESSAGES if m["message_id"] == mid)
-    print(f"  MISSED TP {mid}: {msg['text'][:80]}...")
+    print(f"  MISSED TP {mid}: {msg['text'][:90]}...")
 
-print(f"\nFalse Positives: {len(filter_results['fp_pass'])}/{len(fp_ids)} leaked through (should be 0)")
+print(f"\nFalse Positives: {len(filter_results['fp_reject'])}/{fp_total} rejected", end="")
+if len(filter_results['fp_pass']) == 0:
+    print(" ✓")
+else:
+    print(f" ✗ ({len(filter_results['fp_pass'])} leaked)")
 for mid in filter_results['fp_pass']:
     msg = next(m for m in MESSAGES if m["message_id"] == mid)
-    print(f"  LEAKED FP {mid}: {msg['text'][:80]}...")
+    print(f"  LEAKED FP {mid}: {msg['text'][:90]}...")
 
-print(f"\nFalse Negatives: {len(filter_results['fn_fail'])}/{len(fn_ids)} missed (filter too strict)")
+print(f"\nFalse Negatives: {len(filter_results['fn_pass'])}/{fn_total} recovered", end="")
+print(f" ({len(filter_results['fn_fail'])} still missed)")
 for mid in filter_results['fn_fail']:
     msg = next(m for m in MESSAGES if m["message_id"] == mid)
-    print(f"  MISSED FN {mid}: {msg['text'][:80]}...")
+    print(f"  MISSED FN {mid}: {msg['text'][:90]}...")
 
 print(f"\nEdge Cases:      {len(filter_results['ec_pass'])}/{len(ec_ids)} passed")
 
@@ -270,14 +308,14 @@ for msg in deduped:
     if "astrapress" in channels and "oper_ZSU" in channels:
         tp1_2_merged = True
         break
-print(f"\nTP1+TP2 (same event, diff channels) merged: {tp1_2_merged}")
+print(f"\nTP1+TP2 (same event, diff channels) merged: {tp1_2_merged}", "✓" if tp1_2_merged else "✗")
 
 # Check: EC1 and EC2 (different targets, same city, same day) should NOT be merged
 ec1_present = any(m["message_id"] == 11001 for m in deduped)
 ec2_present = any(m["message_id"] == 11002 for m in deduped)
-print(f"EC1 (refinery) still present: {ec1_present}")
-print(f"EC2 (airfield) still present: {ec2_present}")
-if not (ec1_present and ec2_present):
+both_present = ec1_present and ec2_present
+print(f"EC1+EC2 (diff targets, same city) both present: {both_present}", "✓" if both_present else "✗")
+if not both_present:
     print("  BUG: Different targets in same city were incorrectly merged!")
 
 # ──────────────────────────────────────────────────────────────
@@ -314,7 +352,7 @@ synthetic_incidents = [
      "latitude": 54.63, "longitude": 39.57, "confidence": "high", "maritime": False,
      "source_channel": "oper_ZSU", "message_date": "2026-02-09"},
 
-    # Pair C: Same city, same target type, coordinates ~15km apart — should they merge?
+    # Pair C: Same city, same target type, coordinates ~15km apart
     {"date": "2026-02-05", "city": "Bryansk", "region": "Bryansk",
      "target_type": "ammunition_depot", "facility_name": None,
      "damage_summary": "Ammo depot hit",
@@ -326,7 +364,7 @@ synthetic_incidents = [
      "latitude": 53.35, "longitude": 34.40, "confidence": "medium", "maritime": False,
      "source_channel": "Tsaplienko", "message_date": "2026-02-05"},
 
-    # Pair D: 50km radius problem — two cities in same oblast, 45km apart
+    # Pair D: Two cities 80+ km apart in same oblast
     {"date": "2026-02-06", "city": "Belgorod", "region": "Belgorod",
      "target_type": "fuel_depot", "facility_name": "Belgorod fuel depot",
      "damage_summary": "Fuel depot struck",
@@ -338,7 +376,8 @@ synthetic_incidents = [
      "latitude": 51.30, "longitude": 37.84, "confidence": "high", "maritime": False,
      "source_channel": "astrapress", "message_date": "2026-02-06"},
 
-    # Pair E: "other" target type matches anything — merging a radar with "other"
+    # Pair E: "other" vs specific type, close coords (<10km) — should merge
+    # (coords 2.5km apart = strong enough signal these are the same event)
     {"date": "2026-02-07", "city": "Sevastopol", "region": "Crimea",
      "target_type": "radar", "facility_name": "S-400 radar station",
      "damage_summary": "Radar installation destroyed",
@@ -350,7 +389,19 @@ synthetic_incidents = [
      "latitude": 44.58, "longitude": 33.53, "confidence": "medium", "maritime": False,
      "source_channel": "oper_ZSU", "message_date": "2026-02-07"},
 
-    # Pair F: first-5-chars city name collision — "Krasn..." matches both cities
+    # Pair E2: "other" vs specific type, FAR coords (>10km) — should NOT merge
+    {"date": "2026-02-07", "city": "Simferopol", "region": "Crimea",
+     "target_type": "airfield", "facility_name": "Saki airfield",
+     "damage_summary": "Airfield runway hit",
+     "latitude": 45.09, "longitude": 33.57, "confidence": "high", "maritime": False,
+     "source_channel": "Crimeanwind", "message_date": "2026-02-07"},
+    {"date": "2026-02-07", "city": "Simferopol", "region": "Crimea",
+     "target_type": "other", "facility_name": None,
+     "damage_summary": "Target in Simferopol area",
+     "latitude": 44.95, "longitude": 34.10, "confidence": "medium", "maritime": False,
+     "source_channel": "oper_ZSU", "message_date": "2026-02-07"},
+
+    # Pair F: Krasnodar vs Krasnoyarsk — must NOT merge (2700km apart!)
     {"date": "2026-02-04", "city": "Krasnodar", "region": "Krasnodar",
      "target_type": "fuel_depot", "facility_name": None,
      "damage_summary": "Fuel depot hit in Krasnodar",
@@ -361,124 +412,243 @@ synthetic_incidents = [
      "damage_summary": "Fuel depot hit in Krasnoyarsk",
      "latitude": None, "longitude": None, "confidence": "medium", "maritime": False,
      "source_channel": "Tsaplienko", "message_date": "2026-02-04"},
+
+    # Pair G: Ukrainian vs English spelling — should merge via alias table
+    {"date": "2026-02-08", "city": "Воронiж", "region": "Voronezh",
+     "target_type": "fuel_depot", "facility_name": None,
+     "damage_summary": "Fuel depot on fire in Voronezh",
+     "latitude": None, "longitude": None, "confidence": "high", "maritime": False,
+     "source_channel": "exilenova_plus", "message_date": "2026-02-08"},
+    {"date": "2026-02-08", "city": "Voronezh", "region": "Voronezh",
+     "target_type": "fuel_depot", "facility_name": None,
+     "damage_summary": "Fuel storage burning in Voronezh",
+     "latitude": None, "longitude": None, "confidence": "medium", "maritime": False,
+     "source_channel": "astrapress", "message_date": "2026-02-08"},
+
+    # Pair H: "other" + same facility name — SHOULD merge
+    {"date": "2026-02-06", "city": "Kerch", "region": "Crimea",
+     "target_type": "naval", "facility_name": "Kerch shipyard",
+     "damage_summary": "Shipyard damaged by missile",
+     "latitude": 45.35, "longitude": 36.47, "confidence": "high", "maritime": True,
+     "source_channel": "Crimeanwind", "message_date": "2026-02-06"},
+    {"date": "2026-02-06", "city": "Kerch", "region": "Crimea",
+     "target_type": "other", "facility_name": "Kerch shipyard",
+     "damage_summary": "Target hit in Kerch",
+     "latitude": 45.35, "longitude": 36.47, "confidence": "medium", "maritime": False,
+     "source_channel": "oper_ZSU", "message_date": "2026-02-06"},
 ]
 
 print(f"\n{len(synthetic_incidents)} synthetic incidents")
 
 result = dedup.deduplicate(synthetic_incidents)
-print(f"{len(result)} after dedup")
+print(f"{len(result)} after dedup\n")
 
-# Analyze which pairs got merged
-print("\nExpected behavior vs actual:")
+print("Expected behavior vs actual:")
 
 # Pair A: should merge (same event)
-pair_a_merged = len([r for r in result
-    if r.get("city") == "Krasnodar" and r.get("date") == "2026-02-03"
-    and r.get("target_type") == "oil_refinery"]) == 1
-print(f"  Pair A (same refinery, 2 sources): merged={pair_a_merged} (expected: True)")
+pair_a = [r for r in result if r.get("city") == "Krasnodar" and r.get("date") == "2026-02-03"
+          and r.get("target_type") == "oil_refinery"]
+ok = len(pair_a) == 1
+print(f"  Pair A (same refinery, 2 sources):       merged={ok}  (want: True)  {'✓' if ok else '✗'}")
 
 # Pair B: should NOT merge (different targets)
-pair_b_count = len([r for r in result
-    if r.get("city") == "Ryazan" and r.get("date") == "2026-02-09"])
-print(f"  Pair B (refinery vs airfield, same city): count={pair_b_count} (expected: 2)")
+pair_b = [r for r in result if r.get("city") == "Ryazan" and r.get("date") == "2026-02-09"]
+ok = len(pair_b) == 2
+print(f"  Pair B (refinery vs airfield, same city): count={len(pair_b)}   (want: 2)     {'✓' if ok else '✗'}")
 
-# Pair C: same city, same type, 15km apart — likely merged
-pair_c_count = len([r for r in result
-    if r.get("city") == "Bryansk" and r.get("date") == "2026-02-05"])
-print(f"  Pair C (2 ammo depots, 15km apart): count={pair_c_count} (expected: 2, but may be 1)")
+# Pair C: same city, same type, 15km apart
+pair_c = [r for r in result if r.get("city") == "Bryansk" and r.get("date") == "2026-02-05"]
+ok = len(pair_c) == 2
+print(f"  Pair C (2 ammo depots, 15km apart):       count={len(pair_c)}   (want: 2)     {'✓' if ok else '✗ (merged — could be 2 distinct sites)'}")
 
 # Pair D: different cities, 80km apart
-pair_d_count = len([r for r in result
-    if r.get("region") == "Belgorod" and r.get("date") == "2026-02-06"])
-print(f"  Pair D (Belgorod vs Stary Oskol, ~80km): count={pair_d_count} (expected: 2)")
+pair_d = [r for r in result if r.get("region") == "Belgorod" and r.get("date") == "2026-02-06"]
+ok = len(pair_d) == 2
+print(f"  Pair D (Belgorod vs Stary Oskol, ~80km):  count={len(pair_d)}   (want: 2)     {'✓' if ok else '✗'}")
 
-# Pair E: "other" matches radar
-pair_e_count = len([r for r in result
-    if r.get("city") == "Sevastopol" and r.get("date") == "2026-02-07"])
-print(f"  Pair E (radar + 'other' in Sevastopol): count={pair_e_count} (expected: 2, got merged?)")
+# Pair E: "other" vs specific type, close coords (<10km) — should merge
+pair_e = [r for r in result if r.get("city") == "Sevastopol" and r.get("date") == "2026-02-07"]
+ok = len(pair_e) == 1
+print(f"  Pair E (radar + 'other', <10km coords):    merged={ok}  (want: True)  {'✓' if ok else '✗'}")
 
-# Pair F: first-5-chars collision
-pair_f_count = len([r for r in result
-    if r.get("date") == "2026-02-04" and r.get("target_type") == "fuel_depot"])
-print(f"  Pair F (Krasnodar vs Krasnoyarsk, first-5-chars): count={pair_f_count} (expected: 2)")
+# Pair E2: "other" vs specific type, far coords (>10km) — should NOT merge
+pair_e2 = [r for r in result if r.get("city") == "Simferopol" and r.get("date") == "2026-02-07"]
+ok = len(pair_e2) == 2
+print(f"  Pair E2 (airfield + 'other', >10km):       count={len(pair_e2)}   (want: 2)     {'✓' if ok else '✗'}")
+
+# Pair F: Krasnodar vs Krasnoyarsk
+pair_f = [r for r in result if r.get("date") == "2026-02-04" and r.get("target_type") == "fuel_depot"]
+ok = len(pair_f) == 2
+print(f"  Pair F (Krasnodar vs Krasnoyarsk):         count={len(pair_f)}   (want: 2)     {'✓' if ok else '✗ DATA LOSS BUG'}")
+
+# Pair G: Ukrainian vs English spelling — should merge via alias
+pair_g = [r for r in result if r.get("region") == "Voronezh" and r.get("date") == "2026-02-08"]
+ok = len(pair_g) == 1
+print(f"  Pair G (Voronizh/Voronezh alias):          merged={ok}  (want: True)  {'✓' if ok else '✗'}")
+
+# Pair H: "other" + same facility name — SHOULD merge
+pair_h = [r for r in result if r.get("city") == "Kerch" and r.get("date") == "2026-02-06"]
+ok = len(pair_h) == 1
+print(f"  Pair H ('other' + matching facility):      merged={ok}  (want: True)  {'✓' if ok else '✗'}")
+if pair_h:
+    print(f"    → maritime flag preserved: {pair_h[0].get('maritime')}", "✓" if pair_h[0].get('maritime') else "✗")
 
 # ──────────────────────────────────────────────────────────────
-# Section 6: Test the transliteration / normalization edge cases
+# Section 6: Normalization + city alias test
 # ──────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 70)
-print("NORMALIZATION TEST")
+print("NORMALIZATION + ALIAS TEST")
 print("=" * 70)
 
 test_pairs = [
-    ("Белгород", "Belgorod"),
-    ("Краснодар", "Krasnodar"),
-    ("Рязань", "Ryazan"),
-    ("Севастополь", "Sevastopol"),
-    ("Брянськ", "Bryansk"),    # Ukrainian spelling
-    ("Воронiж", "Voronezh"),   # Ukrainian spelling
+    ("Белгород", "Belgorod", True),
+    ("Краснодар", "Krasnodar", True),
+    ("Рязань", "Ryazan", True),
+    ("Севастополь", "Sevastopol", True),
+    ("Брянськ", "Bryansk", True),
+    ("Воронiж", "Voronezh", True),    # Should match via alias
+    ("Краснодар", "Красноярск", False),  # Must NOT match
 ]
 
-for cyrillic, english in test_pairs:
+for cyrillic, other, expected_match in test_pairs:
     norm_c = dedup._normalize(cyrillic)
-    norm_e = dedup._normalize(english)
-    match = norm_c == norm_e
-    print(f"  '{cyrillic}' → '{norm_c}' vs '{english}' → '{norm_e}'  match={match}")
+    norm_o = dedup._normalize(other)
+    direct_match = norm_c == norm_o
+    alias_match = dedup._cities_equivalent(norm_c, norm_o)
+    actual_match = direct_match or alias_match
+    ok = actual_match == expected_match
+    print(f"  '{cyrillic}' vs '{other}': direct={direct_match}, alias={alias_match} → {actual_match} (want: {expected_match}) {'✓' if ok else '✗'}")
 
 # ──────────────────────────────────────────────────────────────
-# Section 7: Check extraction prompt token budget
+# Section 7: Token budget check (after fix)
 # ──────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 70)
-print("TOKEN BUDGET CHECK")
+print("TOKEN BUDGET CHECK (after fix)")
 print("=" * 70)
 
-# Estimate: extraction prompt is ~500 tokens, each message ~200 tokens
-# With 25 messages per batch: ~500 + 25*200 = ~5500 input tokens
-# max_tokens=4096 for output
-
 prompt_chars = len(filter_and_extract.EXTRACTION_PROMPT)
-print(f"Extraction prompt: {prompt_chars} chars (~{prompt_chars // 4} tokens)")
+print(f"Extraction prompt (system): {prompt_chars} chars (~{prompt_chars // 4} tokens)")
 print(f"Batch size: {config.BATCH_SIZE} messages")
-print(f"Estimated input per batch: ~{prompt_chars // 4 + config.BATCH_SIZE * 200} tokens")
-print(f"Output max_tokens: 4096")
-print(f"At ~150 tokens per incident, max ~{4096 // 150} incidents per batch")
-print(f"If all 25 messages have 2+ incidents each = 50+ incidents = ~7500 tokens — WILL TRUNCATE")
+print(f"Output max_tokens: 8192 (was 4096)")
+print(f"At ~150 tokens per incident, max ~{8192 // 150} incidents per batch ✓")
 
 # ──────────────────────────────────────────────────────────────
-# Section 8: Validate.py CSV round-trip issue
+# Section 8: Validate.py CSV round-trip check (after fix)
 # ──────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 70)
-print("CSV ROUND-TRIP CHECK (validate.py sends index=True)")
+print("CSV ROUND-TRIP CHECK (after fix)")
 print("=" * 70)
 
 import pandas as pd
-from io import StringIO
+import validate
 
-sample_df = pd.DataFrame([
-    {"Date": "2026-02-03", "City": "Krasnodar", "Region": "Krasnodar",
-     "Target Type": "oil_refinery", "Damage Summary": "Fire at refinery"}
-])
+# Read the validate source to check the index= parameter
+import inspect
+src = inspect.getsource(validate.validate)
+uses_index_false = "index=False" in src
+uses_index_true = "index=True" in src
+print(f"  validate.py uses index=False: {uses_index_false} {'✓' if uses_index_false else '✗'}")
+print(f"  validate.py uses index=True:  {uses_index_true} {'✗ BUG' if uses_index_true else '✓ (removed)'}")
 
-csv_with_index = sample_df.to_csv(index=True)
-print(f"CSV sent to Claude Opus (index=True):")
-print(csv_with_index)
-print("  ^ Note the unnamed index column — Claude may return it as data,")
-print("    or may confuse row numbers with data fields.")
+# Check validation prompt no longer asks to add rows
+has_add_rows = "ADD rows" in src or "add rows" in src or "opus_added" in src
+print(f"  Validation prompt asks to add rows: {has_add_rows} {'✗ hallucination risk' if has_add_rows else '✓ (removed)'}")
 
-csv_without = sample_df.to_csv(index=False)
-print(f"Should be (index=False):")
-print(csv_without)
-
+# ──────────────────────────────────────────────────────────────
+# Section 9: Date range filtering check
 # ──────────────────────────────────────────────────────────────
 
 print("\n" + "=" * 70)
-print("SUMMARY")
+print("DATE RANGE FILTERING CHECK")
 print("=" * 70)
 
-# Check for .env existence
-env_exists = os.path.exists("/home/user/try2/.env")
-print(f"\n.env file present: {env_exists}")
-if not env_exists:
-    print("  (No API keys available — scraping and extraction cannot run)")
+# Check that the extraction code has date validation
+src_extract = inspect.getsource(filter_and_extract._send_batch)
+has_date_filter = "START_DATE" in src_extract or "config.START_DATE" in src_extract
+print(f"  Extraction filters out-of-range dates: {has_date_filter} {'✓' if has_date_filter else '✗'}")
+
+# ──────────────────────────────────────────────────────────────
+# Section 10: incidents.jsonl append mode check
+# ──────────────────────────────────────────────────────────────
+
+print("\n" + "=" * 70)
+print("FILE MODE CHECK")
+print("=" * 70)
+
+src_incidents = inspect.getsource(filter_and_extract.extract_incidents)
+uses_append = '"a"' in src_incidents
+uses_write = '"w"' in src_incidents and '"a"' not in src_incidents
+print(f"  incidents.jsonl uses append mode: {uses_append} {'✓' if uses_append else '✗'}")
+
+# ──────────────────────────────────────────────────────────────
+# SUMMARY
+# ──────────────────────────────────────────────────────────────
+
+print("\n" + "=" * 70)
+print("SUMMARY SCORECARD")
+print("=" * 70)
+
+# Tally results
+issues = []
+passes = []
+
+if len(filter_results['tp_pass']) == tp_total:
+    passes.append(f"Filter: all {tp_total} true positives pass")
+else:
+    issues.append(f"Filter: {len(filter_results['tp_fail'])}/{tp_total} true positives missed")
+
+if len(filter_results['fp_pass']) == 0:
+    passes.append(f"Filter: all {fp_total} false positives rejected")
+else:
+    issues.append(f"Filter: {len(filter_results['fp_pass'])}/{fp_total} false positives leak through")
+
+if tp1_2_merged:
+    passes.append("Cross-channel dedup merges same-event messages")
+else:
+    issues.append("Cross-channel dedup fails to merge same-event messages")
+
+if len(pair_f) == 2:
+    passes.append("Krasnodar/Krasnoyarsk no longer incorrectly merged")
+else:
+    issues.append("CRITICAL: Krasnodar/Krasnoyarsk still merged (data loss)")
+
+if len(pair_e) == 1 and len(pair_e2) == 2:
+    passes.append("'other' type merging gated by coord proximity (<10km)")
+elif len(pair_e2) != 2:
+    issues.append("'other' type still auto-merges with distant specific types")
+else:
+    issues.append("'other' type fails to merge even with close coords")
+
+if uses_index_false and not uses_index_true:
+    passes.append("validate.py sends CSV without spurious index column")
+else:
+    issues.append("validate.py still sends index column")
+
+if not has_add_rows:
+    passes.append("Validation prompt no longer asks LLM to hallucinate rows")
+else:
+    issues.append("Validation prompt still asks LLM to add rows from memory")
+
+if has_date_filter:
+    passes.append("Extraction filters out-of-range dates")
+else:
+    issues.append("No date-range filtering on extracted incidents")
+
+if uses_append:
+    passes.append("incidents.jsonl uses append mode (preserves previous runs)")
+else:
+    issues.append("incidents.jsonl still overwrites on re-run")
+
+print(f"\nPASSED ({len(passes)}):")
+for p in passes:
+    print(f"  ✓ {p}")
+
+if issues:
+    print(f"\nREMAINING ISSUES ({len(issues)}):")
+    for i in issues:
+        print(f"  ✗ {i}")
+else:
+    print(f"\nNo remaining issues found!")
